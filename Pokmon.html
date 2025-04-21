@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor de Cartas Pokémon</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        /* Custom scrollbar for Chrome, Edge, and Safari */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2d3748; /* gray-800 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #4a5568; /* gray-600 */
+            border-radius: 20px;
+            border: 2px solid #2d3748; /* gray-800 */
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: #718096; /* gray-500 */
+        }
+
+        /* Simple pulse animation for loading */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .animate-pulse-simple {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Basic card flip transition (optional) */
+        .card {
+            perspective: 1000px;
+        }
+        .card-inner {
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        /* Add styles if you want to implement flipping */
+
+        /* Modal Transition */
+        .fade-enter-active, .fade-leave-active {
+          transition: opacity 0.3s ease;
+        }
+        .fade-enter-from, .fade-leave-to {
+          opacity: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans">
+
+    <div id="app" class="container mx-auto p-4">
+
+        <h1 class="text-4xl font-bold mb-6 text-center text-yellow-400">Pokédex Kanto (1-150)</h1>
+
+        <div v-if="isLoading" class="text-center py-10">
+            <p class="text-xl text-gray-400 animate-pulse-simple">Cargando Pokémon...</p>
+            <svg class="animate-spin h-8 w-8 text-yellow-400 mx-auto mt-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+
+        <div v-if="error" class="text-center py-10 bg-red-900 border border-red-700 rounded-lg p-4">
+            <p class="text-xl text-red-200">Error al cargar los datos:</p>
+            <p class="text-red-300 mt-2">{{ error }}</p>
+        </div>
+
+        <div v-if="!isLoading && !error" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+            <div v-for="pokemon in pokemonList"
+                 :key="pokemon.id"
+                 @click="showDetails(pokemon)"
+                 class="card bg-gray-800 rounded-lg shadow-lg p-3 cursor-pointer hover:shadow-xl hover:scale-105 transition-transform duration-200 ease-in-out flex flex-col items-center text-center border border-gray-700 hover:border-yellow-500">
+                <img :src="pokemon.sprite" :alt="'Imagen de ' + pokemon.name" class="w-24 h-24 object-contain mb-2" loading="lazy">
+                <span class="font-semibold capitalize text-sm text-white">{{ pokemon.name }}</span>
+                 <span class="text-xs text-gray-400">#{{ String(pokemon.id).padStart(3, '0') }}</span>
+            </div>
+        </div>
+
+        <transition name="fade">
+            <div v-if="showModal && selectedPokemon"
+                 class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+                 @click.self="closeModal"> <div class="bg-gray-800 rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 relative border border-gray-600">
+                    <button @click="closeModal" class="absolute top-3 right-3 text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+
+                    <div class="flex flex-col md:flex-row items-center md:items-start">
+                         <img :src="selectedPokemon.sprite" :alt="'Imagen de ' + selectedPokemon.name" class="w-40 h-40 object-contain mb-4 md:mb-0 md:mr-6 flex-shrink-0 bg-gray-700 rounded-md p-2">
+
+                        <div class="text-center md:text-left w-full">
+                            <h2 class="text-3xl font-bold capitalize mb-1 text-yellow-400">{{ selectedPokemon.name }}</h2>
+                            <p class="text-lg text-gray-400 mb-3">#{{ String(selectedPokemon.id).padStart(3, '0') }}</p>
+
+                            <div class="mb-4">
+                                <h3 class="text-sm font-semibold text-gray-300 mb-1 uppercase tracking-wider">Tipo(s)</h3>
+                                <div class="flex justify-center md:justify-start space-x-2">
+                                    <span v-for="typeInfo in selectedPokemon.types" :key="typeInfo.type.name"
+                                          :class="['px-3 py-1 rounded-full text-xs font-medium capitalize', getTypeColor(typeInfo.type.name)]">
+                                        {{ typeInfo.type.name }}
+                                    </span>
+                                </div>
+                            </div>
+
+                             <div class="mb-4">
+                                <h3 class="text-sm font-semibold text-gray-300 mb-2 uppercase tracking-wider">Estadísticas Base</h3>
+                                <ul class="text-sm text-left space-y-1">
+                                    <li v-for="statInfo in selectedPokemon.stats" :key="statInfo.stat.name" class="flex justify-between items-center">
+                                        <span class="capitalize text-gray-300 w-1/3">{{ formatStatName(statInfo.stat.name) }}</span>
+                                        <div class="w-2/3 bg-gray-600 rounded-full h-2.5 dark:bg-gray-700 ml-2">
+                                          <div class="h-2.5 rounded-full" :class="getStatColor(statInfo.stat.name)" :style="{ width: calculateStatPercentage(statInfo.base_stat) + '%' }"></div>
+                                        </div>
+                                        <span class="font-semibold text-gray-200 w-8 text-right ml-2">{{ statInfo.base_stat }}</span>
+                                    </li>
+                                </ul>
+                            </div>
+
+                             <div class="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-300 mb-1 uppercase tracking-wider">Altura</h3>
+                                    <p class="text-gray-200">{{ selectedPokemon.height / 10 }} m</p> </div>
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-300 mb-1 uppercase tracking-wider">Peso</h3>
+                                    <p class="text-gray-200">{{ selectedPokemon.weight / 10 }} kg</p> </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+    </div>
+
+    <script>
+        // Create the Vue application instance
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            // Setup function for Composition API
+            setup() {
+                // Reactive variables
+                const pokemonList = ref([]); // Holds the list of Pokémon data
+                const selectedPokemon = ref(null); // Holds the data for the modal
+                const isLoading = ref(false); // Loading state indicator
+                const showModal = ref(false); // Controls modal visibility
+                const error = ref(null); // Holds any error messages
+
+                // Base URL for the PokéAPI
+                const POKEAPI_BASE_URL = 'https://pokeapi.co/api/v2/pokemon';
+                const MAX_POKEMON = 150; // Kanto Pokémon
+
+                // --- Data Fetching ---
+                const fetchPokemonData = async () => {
+                    isLoading.value = true;
+                    error.value = null;
+                    pokemonList.value = []; // Clear previous list
+
+                    try {
+                        // Create an array of promises to fetch details for each Pokémon
+                        const promises = [];
+                        for (let id = 1; id <= MAX_POKEMON; id++) {
+                            promises.push(
+                                fetch(`${POKEAPI_BASE_URL}/${id}`)
+                                    .then(response => {
+                                        if (!response.ok) {
+                                            throw new Error(`Error fetching Pokémon #${id}: ${response.statusText}`);
+                                        }
+                                        return response.json();
+                                    })
+                                    .then(data => ({ // Process data immediately
+                                        id: data.id,
+                                        name: data.name,
+                                        sprite: data.sprites.front_default || 'https://placehold.co/96x96/2d3748/718096?text=N/A', // Default sprite or placeholder
+                                        types: data.types,
+                                        stats: data.stats,
+                                        height: data.height,
+                                        weight: data.weight
+                                    }))
+                            );
+                        }
+
+                        // Wait for all promises to resolve
+                        const results = await Promise.all(promises);
+                        pokemonList.value = results; // Assign the fetched and processed data
+
+                    } catch (err) {
+                        console.error("Failed to fetch Pokémon data:", err);
+                        error.value = err.message || 'No se pudieron cargar los datos de Pokémon. Intenta de nuevo más tarde.';
+                    } finally {
+                        isLoading.value = false; // Ensure loading is set to false
+                    }
+                };
+
+                // --- Modal Handling ---
+                const showDetails = (pokemon) => {
+                    selectedPokemon.value = pokemon; // Set the selected Pokémon
+                    showModal.value = true; // Show the modal
+                    document.body.style.overflow = 'hidden'; // Prevent background scrolling
+                };
+
+                const closeModal = () => {
+                    showModal.value = false; // Hide the modal
+                    selectedPokemon.value = null; // Clear selection
+                    document.body.style.overflow = ''; // Restore background scrolling
+                };
+
+                // --- Helper Functions ---
+
+                // Get Tailwind CSS background and text color class based on Pokémon type
+                const getTypeColor = (type) => {
+                    const colors = {
+                        normal: 'bg-gray-400 text-gray-900',
+                        fire: 'bg-red-500 text-white',
+                        water: 'bg-blue-500 text-white',
+                        electric: 'bg-yellow-400 text-gray-900',
+                        grass: 'bg-green-500 text-white',
+                        ice: 'bg-cyan-300 text-gray-900',
+                        fighting: 'bg-orange-700 text-white',
+                        poison: 'bg-purple-600 text-white',
+                        ground: 'bg-yellow-700 text-white',
+                        flying: 'bg-indigo-400 text-white',
+                        psychic: 'bg-pink-500 text-white',
+                        bug: 'bg-lime-500 text-gray-900',
+                        rock: 'bg-yellow-900 text-white',
+                        ghost: 'bg-indigo-800 text-white',
+                        dragon: 'bg-purple-800 text-white',
+                        dark: 'bg-gray-700 text-white',
+                        steel: 'bg-gray-500 text-white',
+                        fairy: 'bg-pink-300 text-gray-900',
+                    };
+                    return colors[type] || 'bg-gray-400 text-gray-900'; // Default color
+                };
+
+                 // Format stat names for better readability
+                const formatStatName = (statName) => {
+                    switch(statName) {
+                        case 'hp': return 'HP';
+                        case 'attack': return 'Ataque';
+                        case 'defense': return 'Defensa';
+                        case 'special-attack': return 'At. Esp.';
+                        case 'special-defense': return 'Def. Esp.';
+                        case 'speed': return 'Velocidad';
+                        default: return statName;
+                    }
+                };
+
+                // Get color for stat bars based on stat name (could also base on value)
+                const getStatColor = (statName) => {
+                     switch(statName) {
+                        case 'hp': return 'bg-red-500';
+                        case 'attack': return 'bg-orange-500';
+                        case 'defense': return 'bg-yellow-500';
+                        case 'special-attack': return 'bg-blue-500';
+                        case 'special-defense': return 'bg-green-500';
+                        case 'speed': return 'bg-pink-500';
+                        default: return 'bg-gray-500';
+                    }
+                };
+
+                // Calculate stat percentage (assuming max base stat around 255 for simplicity)
+                const calculateStatPercentage = (baseStat) => {
+                    const MAX_STAT_VALUE = 200; // Adjust as needed for visual scaling
+                    return Math.min(100, (baseStat / MAX_STAT_VALUE) * 100);
+                };
+
+
+                // --- Lifecycle Hook ---
+                // Fetch data when the component is mounted
+                onMounted(() => {
+                    fetchPokemonData();
+                });
+
+                // Return reactive variables and methods to be used in the template
+                return {
+                    pokemonList,
+                    selectedPokemon,
+                    isLoading,
+                    showModal,
+                    error,
+                    showDetails,
+                    closeModal,
+                    getTypeColor,
+                    formatStatName,
+                    getStatColor,
+                    calculateStatPercentage
+                };
+            }
+        }).mount('#app'); // Mount the Vue app to the div with id="app"
+    </script>
+
+</body>
+</html>
